@@ -14,7 +14,12 @@
       flake-utils,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    {
+      nixosModules = {
+        one-block-army = import ./nix/nixos-module.nix;
+      };
+    }
+    // flake-utils.lib.eachDefaultSystem (
       system:
       let
         overlays = [ (import rust-overlay) ];
@@ -32,6 +37,10 @@
               rust-bin.stable.latest.default
             ];
           };
+
+        packages = {
+          one-block-army = pkgs.callPackage ./nix/package.nix { };
+        };
       }
     );
 }
