@@ -1,4 +1,4 @@
-use std::{fmt::Display, net::IpAddr, ops::Index};
+use std::{collections::HashSet, fmt::Display, net::IpAddr, ops::Index};
 
 pub(crate) struct Parser {}
 
@@ -63,7 +63,7 @@ impl Parser {
                 Ok(ip) => ip,
                 Err(err) => {
                     let part = parts.index(0);
-                    println!("Unable to parse ip addr \"{part}\": {err}");
+                    println!("unable to parse ip addr \"{part}\": {err}");
                     continue;
                 }
             };
@@ -73,7 +73,7 @@ impl Parser {
 
             for hostname in iter {
                 if !hostname_validator::is_valid(hostname) {
-                    println!("Hostname \"{hostname}\" is invalid");
+                    println!("hostname \"{hostname}\" is invalid");
                 }
 
                 entries.push(HostEntry::new(ip, hostname.to_string()));
@@ -84,14 +84,14 @@ impl Parser {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub(crate) struct HostEntry {
     pub(super) ip: IpAddr,
     pub(super) hostname: String,
 }
 
 impl HostEntry {
-    fn new(ip: IpAddr, hostname: String) -> Self {
+    pub(crate) fn new(ip: IpAddr, hostname: String) -> Self {
         Self { ip, hostname }
     }
 
@@ -110,13 +110,13 @@ pub(crate) trait HostsRenderer {
     fn render(self) -> String;
 }
 
-impl HostsRenderer for Vec<HostEntry> {
+impl HostsRenderer for HashSet<HostEntry> {
     fn render(self) -> String {
         let mut list = String::new();
 
         for entry in self.into_iter() {
             use std::fmt::Write;
-            writeln!(list, "{}", entry);
+            writeln!(list, "{entry}").expect("unable to render host");
         }
 
         list
