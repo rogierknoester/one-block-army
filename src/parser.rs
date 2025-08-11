@@ -25,7 +25,7 @@ impl Line {
 
     fn filter_out_comments(self) -> Self {
         if let Some(index) = self.content.find('#') {
-            return self.content.split_at(index).0.trim().into();
+            self.content.split_at(index).0.trim().into()
         } else {
             self
         }
@@ -93,10 +93,6 @@ pub(crate) struct HostEntry {
 impl HostEntry {
     pub(crate) fn new(ip: IpAddr, hostname: String) -> Self {
         Self { ip, hostname }
-    }
-
-    pub(crate) fn is_hostname(&self, other: &str) -> bool {
-        self.hostname.eq(other)
     }
 }
 
