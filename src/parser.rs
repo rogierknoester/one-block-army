@@ -1,27 +1,24 @@
 use std::{
-    collections::HashSet,
     fmt::Display,
-    net::IpAddr,
-    ops::Index,
     sync::mpsc,
     thread::{self, available_parallelism},
 };
 
 pub(crate) struct Parser {}
 
-struct Line {
-    content: String,
+struct Line<'a> {
+    content: &'a str,
 }
 
-impl From<&str> for Line {
-    fn from(value: &str) -> Self {
+impl<'a> From<&'a str> for Line<'a> {
+    fn from(value: &'a str) -> Self {
         Self {
-            content: value.trim().to_string(),
+            content: value.trim(),
         }
     }
 }
 
-impl Line {
+impl<'a> Line<'a> {
     fn is_only_comment(&self) -> bool {
         self.content.starts_with('#')
     }
@@ -45,9 +42,9 @@ impl Line {
 
 impl Parser {
     pub(super) fn parse(input: &str) -> Result<Vec<HostEntry>, String> {
-        let space = available_parallelism().unwrap();
+        let max_thread_count = available_parallelism().unwrap();
         let lines = input.lines().collect::<Vec<&str>>();
-        let chunk_size = lines.len().div_ceil(space.into());
+        let chunk_size = lines.len().div_ceil(max_thread_count.into());
         let chunks = lines.chunks(chunk_size);
 
         let rx = thread::scope(|scope| {
@@ -58,7 +55,7 @@ impl Parser {
                 scope.spawn(move || {
                     let mut entries = vec![];
                     for raw_line_content in chunk {
-                        let line = Line::from(*raw_line_content);
+                        let line: Line = (*raw_line_content).into();
 
                         if line.is_empty() || line.is_only_comment() {
                             continue;
@@ -72,30 +69,17 @@ impl Parser {
 
                         let parts = line.parts();
 
-                        // we need at least two parts
+                        // it should be an ip and hostname part only
                         if parts.len() < 2 {
                             continue;
                         }
 
-                        let ip: IpAddr = match parts.index(0).parse() {
-                            Ok(ip) => ip,
-                            Err(err) => {
-                                let part = parts.index(0);
-                                println!("unable to parse ip addr \"{part}\": {err}");
-                                continue;
-                            }
-                        };
+                        let hostname = unsafe { *parts.get_unchecked(1) };
 
-                        let mut iter = parts.into_iter();
-                        iter.next();
-
-                        for hostname in iter {
-                            if !hostname_validator::is_valid(hostname) {
-                                println!("hostname \"{hostname}\" is invalid");
-                            }
-
-                            entries.push(HostEntry::new(ip, hostname.to_string()));
+                        if !hostname_validator::is_valid(hostname) {
+                            eprintln!("hostname \"{hostname}\" is invalid");
                         }
+                        entries.push(HostEntry::new(hostname));
                     }
 
                     tx.send(entries).expect("cannot send parsed");
@@ -113,19 +97,20 @@ impl Parser {
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub(crate) struct HostEntry {
-    pub(super) ip: IpAddr,
     pub(super) hostname: String,
 }
 
 impl HostEntry {
-    pub(crate) fn new(ip: IpAddr, hostname: String) -> Self {
-        Self { ip, hostname }
+    pub(crate) fn new<S: Into<String>>(hostname: S) -> Self {
+        Self {
+            hostname: hostname.into(),
+        }
     }
 }
 
 impl Display for HostEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.ip, self.hostname)
+        write!(f, "0.0.0.0 {}", self.hostname)
     }
 }
 

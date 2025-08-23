@@ -77,16 +77,7 @@ mod test {
         let whitelisted_hosts = HashSet::from_iter(vec![String::from("kagi.com")]);
         let whitelister = Whitelister::new(&whitelisted_hosts);
 
-        let entries = vec![
-            HostEntry::new(
-                std::net::IpAddr::V4("127.0.0.1".parse().unwrap()),
-                "kagi.com".to_owned(),
-            ),
-            HostEntry::new(
-                std::net::IpAddr::V4("127.0.0.1".parse().unwrap()),
-                "eff.org".to_owned(),
-            ),
-        ];
+        let entries = vec![HostEntry::new("kagi.com"), HostEntry::new("eff.org")];
 
         let result = whitelister.evaluate(&entries);
         assert!(result.len() == 1);
