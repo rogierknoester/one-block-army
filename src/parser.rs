@@ -106,7 +106,7 @@ pub(crate) trait HostsRenderer {
     fn render(self) -> String;
 }
 
-impl HostsRenderer for HashSet<HostEntry> {
+impl HostsRenderer for Vec<HostEntry> {
     fn render(self) -> String {
         let mut list = String::new();
 

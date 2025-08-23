@@ -7,8 +7,10 @@ use reqwest::{Method, StatusCode};
 use serde::Deserialize;
 
 use crate::parser::{HostEntry, HostsRenderer, Parser};
+use crate::whitelisting::Whitelister;
 
 mod parser;
+mod whitelisting;
 
 fn main() {
     let opts = Opts::parse_args_default_or_exit();
@@ -32,7 +34,7 @@ fn main() {
         let req = match req {
             Ok(req) => req,
             Err(e) => {
-                eprintln!("Error with request: {e}");
+                eprintln!("error with request: {e}");
                 continue;
             }
         };
@@ -69,17 +71,13 @@ fn main() {
             }
         }
     }
-
-    let adlist = build_adlist(&config);
-
-    println!("{}", adlist.render());
 }
 
 #[once(time = 900)]
-fn build_adlist(config: &Config) -> HashSet<HostEntry> {
+fn build_adlist(config: &Config) -> Vec<HostEntry> {
     let whitelister = Whitelister::new(&config.whitelisted_hosts);
 
-    config
+    let unfiltered_hosts = config
         .adlists
         .iter()
         .flat_map(|url| {
@@ -88,8 +86,9 @@ fn build_adlist(config: &Config) -> HashSet<HostEntry> {
                 .and_then(|content| Parser::parse(content.as_str()))
                 .unwrap_or_default()
         })
-        .filter(|host| !whitelister.evaluate(host))
-        .collect::<HashSet<HostEntry>>()
+        .collect::<Vec<HostEntry>>();
+
+    whitelister.evaluate(&unfiltered_hosts)
 }
 
 #[derive(Debug, Options)]
@@ -112,42 +111,4 @@ struct Config {
 
 fn fetch_adlist(url: &str) -> Result<String, reqwest::Error> {
     reqwest::blocking::get(url)?.text()
-}
-
-struct Whitelister<'a> {
-    whitelisted_hosts: &'a HashSet<String>,
-}
-
-impl<'a> Whitelister<'a> {
-    fn new(whitelisted_hosts: &'a HashSet<String>) -> Self {
-        Self { whitelisted_hosts }
-    }
-
-    fn evaluate(&self, host: &HostEntry) -> bool {
-        self.whitelisted_hosts.contains(&host.hostname)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_whitelister() {
-        let whitelisted_hosts = HashSet::from_iter(vec![String::from("kagi.com")]);
-        let whitelister = Whitelister::new(&whitelisted_hosts);
-
-        let blocked_host_entry = HostEntry::new(
-            std::net::IpAddr::V4("127.0.0.1".parse().unwrap()),
-            "kagi.com".to_owned(),
-        );
-
-        let non_blocked_host_entry = HostEntry::new(
-            std::net::IpAddr::V4("127.0.0.1".parse().unwrap()),
-            "eff.org".to_owned(),
-        );
-
-        assert!(whitelister.evaluate(&blocked_host_entry));
-        assert!(!whitelister.evaluate(&non_blocked_host_entry));
-    }
 }
