@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+use std::str::FromStr;
 use std::{collections::HashSet, fs::File, io::Read, path::PathBuf, time::Duration};
 
 use blocking_http_server::{Response, Server};
@@ -12,7 +14,7 @@ use crate::whitelisting::Whitelister;
 mod parser;
 mod whitelisting;
 
-fn main() {
+fn main() -> ExitCode {
     let opts = Opts::parse_args_default_or_exit();
 
     let mut file = File::open(opts.config).expect("Unable to open config file. Does it exist?");
@@ -22,6 +24,11 @@ fn main() {
         .expect("Cannot read config file");
 
     let config: Config = toml::from_str(&config_contents).expect("Unable parse config");
+
+    if opts.mode == Mode::Cli {
+        print!("{}", build_adlist(&config).render());
+        return ExitCode::SUCCESS;
+    }
 
     let address = opts.listen;
     let port = opts.port;
@@ -71,6 +78,8 @@ fn main() {
             }
         }
     }
+
+    ExitCode::SUCCESS
 }
 
 #[once(time = 900)]
@@ -101,6 +110,27 @@ struct Opts {
 
     #[options(help = "The port that oba binds to", default = "8000")]
     port: u16,
+
+    #[options(help = "The mode to run in", default = "webserver")]
+    mode: Mode,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Mode {
+    Webserver,
+    Cli,
+}
+
+impl FromStr for Mode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "webserver" => Ok(Mode::Webserver),
+            "cli" => Ok(Mode::Cli),
+            _ => Err("cannot parse mode".to_owned()),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
