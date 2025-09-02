@@ -11,6 +11,7 @@ Created because of a small shortcoming in the adlist feature of RouterOS where y
 - Clone the project `git clone git@github.com:rogierknoester/one-block-army.git`
 - `cargo build --release`
 - copy the binary to where you'd use it
+- create a config file and point to it with the `--config ./config.toml` option
 
 ## NixOS
 
@@ -50,6 +51,8 @@ services.one-block-army = {
 
   whitelistedHosts = [
     "kagi.com"
+    "sentry.io"
+    "*.sentry.io" # globbing is supported
   ];
 };
 ```
