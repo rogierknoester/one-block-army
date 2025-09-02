@@ -4,6 +4,8 @@ use std::{
     thread::{self, available_parallelism},
 };
 
+use glob_match::glob_match;
+
 use crate::parser::HostEntry;
 
 pub struct Whitelister<'a> {
@@ -55,16 +57,32 @@ struct WhitelistingWorker<'a> {
     tx: Sender<Vec<HostEntry>>,
 }
 
+#[derive(PartialEq)]
+enum EvaluationResult {
+    Remove,
+    Keep,
+}
+
 impl<'a> WhitelistingWorker<'a> {
     fn run(self) {
         let result = self
             .entries_to_check
             .iter()
-            .filter(|entry| !self.whitelisted_hosts.contains(&entry.hostname))
+            .filter(|entry| self.evaluate(&entry.hostname) == EvaluationResult::Keep)
             .cloned()
             .collect::<Vec<HostEntry>>();
 
         self.tx.send(result).expect("cannot send results to queue");
+    }
+
+    fn evaluate(&self, host: &str) -> EvaluationResult {
+        for whitelist_entry in self.whitelisted_hosts {
+            if glob_match(whitelist_entry, host) {
+                return EvaluationResult::Remove;
+            }
+        }
+
+        EvaluationResult::Keep
     }
 }
 
@@ -82,5 +100,23 @@ mod test {
         let result = whitelister.evaluate(&entries);
         assert!(result.len() == 1);
         assert_eq!(result.first().unwrap().hostname, "eff.org");
+    }
+
+    #[test]
+    fn test_globbing_in_whitelisted_hosts() {
+        let whitelisted_hosts = HashSet::from_iter(vec![String::from("*.kagi.com")]);
+        let whitelister = Whitelister::new(&whitelisted_hosts);
+
+        let entries = vec![
+            HostEntry::new("kagi.com"),
+            HostEntry::new("assistant.kagi.com"),
+            HostEntry::new("settings.kagi.com"),
+            HostEntry::new("eff.org"),
+        ];
+
+        let result = whitelister.evaluate(&entries);
+        assert!(result.len() == 2);
+        assert_eq!(result.first().unwrap().hostname, "kagi.com");
+        assert_eq!(result[1].hostname, "eff.org");
     }
 }
