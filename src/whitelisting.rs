@@ -4,6 +4,8 @@ use std::{
     thread::{self, available_parallelism},
 };
 
+use bumpalo::Bump;
+use bumpalo::collections::Vec as BVec;
 use glob_match::glob_match;
 
 use crate::parser::HostEntry;
@@ -17,18 +19,15 @@ impl<'a> Whitelister<'a> {
         Self { whitelisted_hosts }
     }
 
-    pub fn evaluate(&self, hosts: &[HostEntry]) -> Vec<HostEntry> {
+    pub fn evaluate(&self, hosts: &[HostEntry], collector: &mut BVec<HostEntry>) {
         let chunk_size = available_parallelism()
             .map(|count| hosts.len().div_ceil(count.into()))
             .unwrap_or(hosts.len());
 
         let chunks = hosts.chunks(chunk_size);
 
-        // we will at best need a vector with the capacity to hold all hosts we have pre-filtering
-        let mut entries = Vec::with_capacity(hosts.len());
-
         let rx = thread::scope(|scope| {
-            let (tx, rx) = mpsc::channel::<Vec<HostEntry>>();
+            let (tx, rx) = mpsc::channel::<HostEntry>();
 
             for chunk in chunks {
                 let worker = WhitelistingWorker {
@@ -42,9 +41,7 @@ impl<'a> Whitelister<'a> {
             rx
         });
 
-        rx.iter().for_each(|mut subset| entries.append(&mut subset));
-
-        entries
+        rx.iter().for_each(|entry| collector.push(entry));
     }
 }
 
@@ -54,7 +51,7 @@ impl<'a> Whitelister<'a> {
 struct WhitelistingWorker<'a> {
     entries_to_check: &'a [HostEntry],
     whitelisted_hosts: &'a HashSet<String>,
-    tx: Sender<Vec<HostEntry>>,
+    tx: Sender<HostEntry>,
 }
 
 #[derive(PartialEq)]
@@ -65,14 +62,11 @@ enum EvaluationResult {
 
 impl<'a> WhitelistingWorker<'a> {
     fn run(self) {
-        let result = self
+         self
             .entries_to_check
             .iter()
             .filter(|entry| self.evaluate(entry) == EvaluationResult::Keep)
-            .cloned()
-            .collect::<Vec<HostEntry>>();
-
-        self.tx.send(result).expect("cannot send results to queue");
+            .for_each(|entry| self.tx.send(entry.to_owned()).expect("cannot send whitelisting results to queue"));
     }
 
     fn evaluate(&self, host: &HostEntry) -> EvaluationResult {

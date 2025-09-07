@@ -3,6 +3,8 @@ use std::str::FromStr;
 use std::{collections::HashSet, fs::File, io::Read, path::PathBuf, time::Duration};
 
 use blocking_http_server::{Response, Server};
+use bumpalo::collections::Vec as BVec;
+use bumpalo::Bump;
 use cached::proc_macro::once;
 use gumdrop::Options;
 use reqwest::{Method, StatusCode};
@@ -27,7 +29,8 @@ fn main() -> ExitCode {
     let config: Config = toml::from_str(&config_contents).expect("Unable parse config");
 
     if opts.mode == Mode::Cli {
-        print!("{}", build_adlist(&config).render());
+        let bump = Bump::new();
+        print!("{}", build_adlist(&config, &bump).render());
         return ExitCode::SUCCESS;
     }
 
@@ -50,16 +53,18 @@ fn main() -> ExitCode {
         match (req.method(), req.uri().path()) {
             (&Method::GET, "/") => {
                 eprintln!("received request from {}", req.peer_addr);
+        let bump = Bump::new();
                 let _ = req.respond(
                     Response::builder()
                         .status(StatusCode::OK)
                         .header("Content-Type".to_owned(), "text/plain".to_owned())
-                        .body(build_adlist(&config).render())
+                        .body(build_adlist(&config, &bump).render())
                         .unwrap(),
                 );
             }
             (&Method::HEAD, "/") => {
-                let content_length = build_adlist(&config).render().len();
+        let bump = Bump::new();
+                let content_length = build_adlist(&config, &bump).render().len();
                 let _ = req.respond(
                     Response::builder()
                         .status(StatusCode::OK)
@@ -83,15 +88,20 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-#[once(time = 900)]
-fn build_adlist(config: &Config) -> Vec<HostEntry> {
+fn build_adlist<'a>(config: &'a Config, bump: &'a Bump) -> BVec<'a, HostEntry> {
     let whitelister = Whitelister::new(&config.whitelisted_hosts);
 
     let fetcher = fetcher::Fetcher::new_with_reqwest();
-    let adlist_contents = fetcher.fetch(&config.adlists);
-    let parsed = Parser::parse(&adlist_contents).expect("cannot parse");
+    let adlist_contents= bump.alloc(String::new());
+    fetcher.fetch(&config.adlists, adlist_contents);
 
-    whitelister.evaluate(&parsed)
+    let mut collector: BVec<HostEntry> = BVec::new_in(bump);
+    Parser::parse(adlist_contents, &mut collector).expect("cannot parse");
+
+    
+    let mut result : BVec<HostEntry> = BVec::with_capacity_in(collector.len(), bump);
+    whitelister.evaluate(collector.into_bump_slice(), &mut result);
+    result
 }
 
 #[derive(Debug, Options)]
@@ -116,13 +126,13 @@ enum Mode {
 }
 
 impl FromStr for Mode {
-    type Err = String;
+    type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "webserver" => Ok(Mode::Webserver),
             "cli" => Ok(Mode::Cli),
-            _ => Err("cannot parse mode".to_owned()),
+            _ => Err("cannot parse mode"),
         }
     }
 }

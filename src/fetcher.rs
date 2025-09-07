@@ -13,7 +13,7 @@ impl Fetcher<ReqwestClient> {
 }
 
 impl<Client: HttpClient> Fetcher<Client> {
-    pub(crate) fn fetch(&self, urls: &[String]) -> String {
+    pub(crate) fn fetch(&self, urls: &[String], contents: &mut String)  {
         thread::scope(|scope| {
             let mut threads = vec![];
 
@@ -35,14 +35,11 @@ impl<Client: HttpClient> Fetcher<Client> {
                 threads.push(thread);
             }
 
-            let mut contents = String::new();
             for thread in threads {
                 let adlist_contents = thread.join().expect("could not join parsing threads");
 
                 contents.push_str(&adlist_contents);
             }
-
-            contents
         })
     }
 }

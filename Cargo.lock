@@ -801,6 +801,7 @@ name = "one-block-army"
 version = "0.1.0"
 dependencies = [
  "blocking-http-server",
+ "bumpalo",
  "cached",
  "glob-match",
  "gumdrop",

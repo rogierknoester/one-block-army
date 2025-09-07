@@ -4,6 +4,8 @@ use std::{
     thread::{self, available_parallelism},
 };
 
+use bumpalo::collections::Vec as BVec;
+
 pub(crate) struct Parser {}
 
 struct Line<'a> {
@@ -41,10 +43,10 @@ impl<'a> Line<'a> {
 }
 
 impl Parser {
-    pub(super) fn parse(input: &str) -> Result<Vec<HostEntry>, String> {
+    pub(super) fn parse(input: &str, collector: &mut BVec<HostEntry>) -> Result<(), String> {
         let orchestrator = Orchestrator::new();
 
-        let results = orchestrator.orchestrate(input);
+        let results = orchestrator.orchestrate(input, collector);
 
         Ok(results)
     }
@@ -58,12 +60,12 @@ impl Orchestrator {
     }
 
     /// Orchestrate the parsing in a multithreaded manner
-    fn orchestrate(&self, contents: &str) -> Vec<HostEntry> {
+    fn orchestrate(&self, contents: &str, collector: &mut BVec<HostEntry>)  {
         let lines = contents.lines().collect::<Vec<&str>>();
         let chunks = lines.chunks(self.resolve_chunk_size(contents));
 
         let rx = thread::scope(|scope| {
-            let (tx, rx) = mpsc::channel::<Vec<HostEntry>>();
+            let (tx, rx) = mpsc::channel::<HostEntry>();
 
             for chunk in chunks {
                 let worker = Worker::new(tx.clone());
@@ -74,7 +76,9 @@ impl Orchestrator {
             rx
         });
 
-        rx.iter().flatten().collect::<Vec<HostEntry>>()
+        for x in rx.into_iter() {
+            collector.push(x);
+        }
     }
 
     /// Resolve how many chunks should be created from the contents
@@ -86,23 +90,21 @@ impl Orchestrator {
 }
 
 struct Worker {
-    tx: Sender<Vec<HostEntry>>,
+    tx: Sender<HostEntry>,
 }
 
 impl Worker {
-    fn new(tx: Sender<Vec<HostEntry>>) -> Self {
+    fn new(tx: Sender<HostEntry>) -> Self {
         Self { tx }
     }
 
     fn work(&self, line: &[&str]) {
-        let mut entries: Vec<HostEntry> = vec![];
         for raw_line_content in line {
             if let Some(hostname) = parse_line(raw_line_content) {
-                entries.push(hostname);
+                self.tx.send(hostname).expect("cannot send parsed");
             }
         }
 
-        self.tx.send(entries).expect("cannot send parsed");
     }
 }
 
@@ -154,9 +156,9 @@ pub(crate) trait HostsRenderer {
     fn render(self) -> String;
 }
 
-impl HostsRenderer for Vec<HostEntry> {
+impl<'a> HostsRenderer for BVec<'a, HostEntry> {
     fn render(self) -> String {
-        let mut list = String::new();
+        let mut list = String::with_capacity(self.len());
 
         for entry in self.into_iter() {
             use std::fmt::Write;
