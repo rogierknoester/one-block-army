@@ -79,7 +79,7 @@ impl Parser {
                         if !hostname_validator::is_valid(hostname) {
                             eprintln!("hostname \"{hostname}\" is invalid");
                         }
-                        entries.push(HostEntry::new(hostname));
+                        entries.push(hostname.into());
                     }
 
                     tx.send(entries).expect("cannot send parsed");
@@ -96,21 +96,17 @@ impl Parser {
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub(crate) struct HostEntry {
-    pub(super) hostname: String,
-}
+pub(crate) struct HostEntry(pub(crate) String);
 
-impl HostEntry {
-    pub(crate) fn new<S: Into<String>>(hostname: S) -> Self {
-        Self {
-            hostname: hostname.into(),
-        }
+impl From<&str> for HostEntry {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
 
 impl Display for HostEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "0.0.0.0 {}", self.hostname)
+        write!(f, "0.0.0.0 {}", &self.0)
     }
 }
 

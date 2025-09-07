@@ -68,16 +68,16 @@ impl<'a> WhitelistingWorker<'a> {
         let result = self
             .entries_to_check
             .iter()
-            .filter(|entry| self.evaluate(&entry.hostname) == EvaluationResult::Keep)
+            .filter(|entry| self.evaluate(entry) == EvaluationResult::Keep)
             .cloned()
             .collect::<Vec<HostEntry>>();
 
         self.tx.send(result).expect("cannot send results to queue");
     }
 
-    fn evaluate(&self, host: &str) -> EvaluationResult {
+    fn evaluate(&self, host: &HostEntry) -> EvaluationResult {
         for whitelist_entry in self.whitelisted_hosts {
-            if glob_match(whitelist_entry, host) {
+            if glob_match(whitelist_entry, &host.0) {
                 return EvaluationResult::Remove;
             }
         }
@@ -95,11 +95,11 @@ mod test {
         let whitelisted_hosts = HashSet::from_iter(vec![String::from("kagi.com")]);
         let whitelister = Whitelister::new(&whitelisted_hosts);
 
-        let entries = vec![HostEntry::new("kagi.com"), HostEntry::new("eff.org")];
+        let entries = vec!["kagi.com".into(), "eff.org".into()];
 
         let result = whitelister.evaluate(&entries);
         assert!(result.len() == 1);
-        assert_eq!(result.first().unwrap().hostname, "eff.org");
+        assert_eq!(result.first().unwrap().0, "eff.org");
     }
 
     #[test]
@@ -108,15 +108,15 @@ mod test {
         let whitelister = Whitelister::new(&whitelisted_hosts);
 
         let entries = vec![
-            HostEntry::new("kagi.com"),
-            HostEntry::new("assistant.kagi.com"),
-            HostEntry::new("settings.kagi.com"),
-            HostEntry::new("eff.org"),
+            "kagi.com".into(),
+            "assistant.kagi.com".into(),
+            "settings.kagi.com".into(),
+            "eff.org".into(),
         ];
 
         let result = whitelister.evaluate(&entries);
         assert!(result.len() == 2);
-        assert_eq!(result.first().unwrap().hostname, "kagi.com");
-        assert_eq!(result[1].hostname, "eff.org");
+        assert_eq!(result.first().unwrap().0, "kagi.com");
+        assert_eq!(result[1].0, "eff.org");
     }
 }
