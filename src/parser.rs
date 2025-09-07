@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    sync::mpsc,
+    sync::mpsc::{self, Sender},
     thread::{self, available_parallelism},
 };
 
@@ -42,57 +42,97 @@ impl<'a> Line<'a> {
 
 impl Parser {
     pub(super) fn parse(input: &str) -> Result<Vec<HostEntry>, String> {
-        let max_thread_count = available_parallelism().unwrap();
-        let lines = input.lines().collect::<Vec<&str>>();
-        let chunk_size = lines.len().div_ceil(max_thread_count.into());
-        let chunks = lines.chunks(chunk_size);
+        let orchestrator = Orchestrator::new();
+
+        let results = orchestrator.orchestrate(input);
+
+        Ok(results)
+    }
+}
+
+struct Orchestrator {}
+
+impl Orchestrator {
+    fn new() -> Self {
+        Self {}
+    }
+
+    /// Orchestrate the parsing in a multithreaded manner
+    fn orchestrate(&self, contents: &str) -> Vec<HostEntry> {
+        let lines = contents.lines().collect::<Vec<&str>>();
+        let chunks = lines.chunks(self.resolve_chunk_size(contents));
 
         let rx = thread::scope(|scope| {
             let (tx, rx) = mpsc::channel::<Vec<HostEntry>>();
 
             for chunk in chunks {
-                let tx = tx.clone();
-                scope.spawn(move || {
-                    let mut entries = vec![];
-                    for raw_line_content in chunk {
-                        let line: Line = (*raw_line_content).into();
+                let worker = Worker::new(tx.clone());
 
-                        if line.is_empty() || line.is_only_comment() {
-                            continue;
-                        }
-
-                        let line = line.filter_out_comments();
-
-                        if line.is_empty() {
-                            continue;
-                        }
-
-                        let parts = line.parts();
-
-                        // it should be an ip and hostname part only
-                        if parts.len() < 2 {
-                            continue;
-                        }
-
-                        let hostname = unsafe { *parts.get_unchecked(1) };
-
-                        if !hostname_validator::is_valid(hostname) {
-                            eprintln!("hostname \"{hostname}\" is invalid");
-                        }
-                        entries.push(hostname.into());
-                    }
-
-                    tx.send(entries).expect("cannot send parsed");
-                });
+                scope.spawn(move || worker.work(chunk));
             }
+
             rx
         });
 
-        let mut entries = vec![];
-        rx.iter().for_each(|mut subset| entries.append(&mut subset));
-
-        Ok(entries)
+        rx.iter().flatten().collect::<Vec<HostEntry>>()
     }
+
+    /// Resolve how many chunks should be created from the contents
+    fn resolve_chunk_size(&self, contents: &str) -> usize {
+        let max_thread_count = available_parallelism().unwrap();
+        let line_count = contents.lines().count();
+        line_count.div_ceil(max_thread_count.into())
+    }
+}
+
+struct Worker {
+    tx: Sender<Vec<HostEntry>>,
+}
+
+impl Worker {
+    fn new(tx: Sender<Vec<HostEntry>>) -> Self {
+        Self { tx }
+    }
+
+    fn work(&self, line: &[&str]) {
+        let mut entries: Vec<HostEntry> = vec![];
+        for raw_line_content in line {
+            if let Some(hostname) = parse_line(raw_line_content) {
+                entries.push(hostname);
+            }
+        }
+
+        self.tx.send(entries).expect("cannot send parsed");
+    }
+}
+
+fn parse_line(line: &str) -> Option<HostEntry> {
+    let line: Line = line.into();
+
+    if line.is_empty() || line.is_only_comment() {
+        return None;
+    }
+
+    let line = line.filter_out_comments();
+
+    if line.is_empty() {
+        return None;
+    }
+
+    let parts = line.parts();
+
+    // it should be an ip and hostname part only
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let hostname = unsafe { *parts.get_unchecked(1) };
+
+    if !hostname_validator::is_valid(hostname) {
+        eprintln!("hostname \"{hostname}\" is invalid");
+    }
+
+    Some(hostname.into())
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
