@@ -801,6 +801,7 @@ dependencies = [
  "hostname-validator",
  "reqwest",
  "serde",
+ "thiserror",
  "toml",
 ]
 
