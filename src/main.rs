@@ -8,7 +8,6 @@ use gumdrop::Options;
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
 
-use crate::fetcher::fetch;
 use crate::parser::{HostEntry, HostsRenderer, Parser};
 use crate::whitelisting::Whitelister;
 
@@ -88,7 +87,8 @@ fn main() -> ExitCode {
 fn build_adlist(config: &Config) -> Vec<HostEntry> {
     let whitelister = Whitelister::new(&config.whitelisted_hosts);
 
-    let adlist_contents = fetch(&config.adlists);
+    let fetcher = fetcher::Fetcher::new_with_reqwest();
+    let adlist_contents = fetcher.fetch(&config.adlists);
     let parsed = Parser::parse(&adlist_contents).expect("cannot parse");
 
     whitelister.evaluate(&parsed)
