@@ -1,6 +1,6 @@
 # one-block-army
 
-**Adlist merger and whitelister**
+**Adlist merger and whitelister**  
 Created because of a small shortcoming in the adlist feature of RouterOS where you cannot whitelist hosts.
 
 
