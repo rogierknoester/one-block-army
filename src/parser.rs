@@ -135,7 +135,7 @@ fn parse_line(line: &str) -> Option<HostEntry> {
     Some(hostname.into())
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub(crate) struct HostEntry(pub(crate) String);
 
 impl From<&str> for HostEntry {

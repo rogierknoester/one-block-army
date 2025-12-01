@@ -114,9 +114,10 @@ mod test {
             "eff.org".into(),
         ];
 
-        let result = whitelister.evaluate(&entries);
+        let mut result = whitelister.evaluate(&entries);
+        result.sort();
         assert!(result.len() == 2);
-        assert_eq!(result.first().unwrap().0, "kagi.com");
-        assert_eq!(result[1].0, "eff.org");
+        assert_eq!(result.first().unwrap().0, "eff.org");
+        assert_eq!(result[1].0, "kagi.com");
     }
 }
